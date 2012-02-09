@@ -1,6 +1,6 @@
 TITLE PDP8-Simulator
 ; =================================================================
-;	Author: Joe DeMesy
+;	Author: Moloch
 ;	Last Updated: 04/25/2011
 ;	Architecture: Intel x86
 ;	About: PDP8 simulator, written in Microsoft macro assembly
