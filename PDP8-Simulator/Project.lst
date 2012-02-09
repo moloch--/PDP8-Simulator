@@ -1,0 +1,1228 @@
+Microsoft (R) Macro Assembler Version 10.00.30319.01	    04/25/11 11:28:17
+PDP8-Simulato						     Page 1 - 1
+
+
+				TITLE PDP8-Simulator
+				; =================================================================
+				;	Author: Joe DeMesy
+				;	Last Updated: 04/25/2011
+				;	Architecture: Intel x86
+				;	About: PDP8 simulator, written in Microsoft macro assembly
+				;		   compiled and tested on Windows 7 w/Visual Studio 2010
+				; =================================================================
+				INCLUDE Irvine32.inc
+			      C ; Include file for Irvine32.lib             (Irvine32.inc)
+			      C 
+			      C ;OPTION CASEMAP:NONE		; optional: make identifiers case-sensitive
+			      C 
+			      C INCLUDE SmallWin.inc		; MS-Windows prototypes, structures, and constants
+			      C .NOLIST
+			      C .LIST
+			      C 
+			      C INCLUDE VirtualKeys.inc
+			      C ; VirtualKeys.inc
+			      C .NOLIST
+			      C .LIST
+			      C 
+			      C 
+			      C .NOLIST
+			      C .LIST
+			      C 
+				INCLUDE pdp8-ui.inc
+			      C TITLE PDP8-UserInterface
+			      C 
+ 00000000		      C .data
+ 00000000  0000000E [	      C UserInput			BYTE	14 DUP(0)
+	    00
+	   ]
+ 0000000E 5B 2A 5D 20 50      C Splash				BYTE	"[*] PDP8 System Boot at Location: ", 0
+	   44 50 38 20 53
+	   79 73 74 65 6D
+	   20 42 6F 6F 74
+	   20 61 74 20 4C
+	   6F 63 61 74 69
+	   6F 6E 3A 20 00
+ 00000031 5B 2B 5D 20 45      C InstructionPrompt	BYTE	"[+] Enter a new instruction: ", 0
+	   6E 74 65 72 20
+	   61 20 6E 65 77
+	   20 69 6E 73 74
+	   72 75 63 74 69
+	   6F 6E 3A 20 00
+ 0000004F 0000		      C InstructionCount	WORD	0
+ 00000051 20 4F 46 46 53      C Address				BYTE	" OFFSET: 0x", 0
+	   45 54 3A 20 30
+	   78 00
+ 0000005D 20 5B 3E 5D 20      C Indirect			BYTE	" [>] INDIRECT: ", 0
+	   49 4E 44 49 52
+	   45 43 54 3A 20
+	   00
+ 0000006D 20 50 41 47 45      C PageNumber			BYTE	" PAGE: ", 0
+	   3A 20 00
+ 00000075 5B 2A 5D 20 50      C DisplayPC			BYTE	"[*] Program Counter: ", 0
+	   72 6F 67 72 61
+	   6D 20 43 6F 75
+	   6E 74 65 72 3A
+	   20 00
+ 0000008B 41 44 44 00 54      C Instructions		BYTE	"ADD", 0, "TAD", 0, "ISZ", 0, "DCA", 0, "JMS", 0, "JMP", 0, "IOT", 0, "OPR", 0
+	   41 44 00 49 53
+	   5A 00 44 43 41
+	   00 4A 4D 53 00
+	   4A 4D 50 00 49
+	   4F 54 00 4F 50
+	   52 00
+			      C 
+ 00000000		      C .code
+ 00000000		      C printSplash PROC USES eax edx
+ 00000002  BA 0000000E R      C 	 mov edx, offset Splash
+ 00000007  E8 00000000 E      C 	 call WriteString
+ 0000000C  A1 0000014A R      C 	 mov eax, ProgramCounter
+ 00000011  E8 00000000 E      C 	 call WriteDec
+ 00000016  E8 00000000 E      C 	 call CrLf
+			      C 	 ret
+ 0000001E		      C printSplash ENDP
+			      C 
+ 0000001E		      C printOpCode PROC USES eax edx
+ 00000020  66| A1	      C 	mov ax, CurrentInstruction
+	   00002210 R
+ 00000026  25 00000E00	      C 	and eax, 000000E00h
+ 0000002B  66| C1 E8 07	      C 	shr ax, 7h
+ 0000002F  BA 0000008B R      C 	mov edx, offset Instructions
+ 00000034  03 D0	      C 	add edx, eax
+ 00000036  E8 00000000 E      C 	call WriteString
+			      C 	ret
+ 0000003E		      C printOpCode ENDP
+			      C 	
+ 0000003E		      C printIndirect PROC USES eax edx
+ 00000040  66| A1	      C 	mov ax, CurrentInstruction
+	   00002210 R
+ 00000046  25 00000100	      C 	and eax, 000000100h
+ 0000004B  66| C1 E8 08	      C 	shr ax, 8h
+ 0000004F  BA 0000005D R      C 	mov edx, offset Indirect
+ 00000054  E8 00000000 E      C 	call WriteString
+ 00000059  E8 00000000 E      C 	call WriteDec
+			      C 	ret
+ 00000061		      C printIndirect ENDP
+			      C 
+ 00000061		      C printPageNumber PROC USES eax edx
+ 00000063  66| A1	      C 	mov ax, CurrentInstruction
+	   00002210 R
+ 00000069  25 00000080	      C 	and eax, 000000080h
+ 0000006E  66| C1 E8 07	      C 	shr ax, 7h
+ 00000072  BA 0000006D R      C 	mov edx, offset PageNumber
+ 00000077  E8 00000000 E      C 	call WriteString
+ 0000007C  E8 00000000 E      C 	call WriteDec
+			      C 	ret
+ 00000084		      C printPageNumber ENDP
+			      C 
+ 00000084		      C printOffset PROC USES eax edx
+ 00000086  66| A1	      C 	mov ax, CurrentInstruction
+	   00002210 R
+ 0000008C  83 E0 7F	      C 	and eax, 00000007Fh
+ 0000008F  BA 00000051 R      C 	mov edx, offset address
+ 00000094  E8 00000000 E      C 	call WriteString
+ 00000099  E8 00000000 E      C 	call WriteHex
+			      C 	ret
+ 000000A1		      C printOffset ENDP
+			      C 
+ 000000A1		      C printAll PROC
+ 000000A1  E8 FFFFFF78	      C 	call printOpCode
+ 000000A6  E8 FFFFFF93	      C 	call printIndirect
+ 000000AB  E8 FFFFFFB1	      C 	call printPageNumber
+ 000000B0  E8 FFFFFFCF	      C 	call printOffset
+ 000000B5  E8 00000000 E      C 	call CrLf
+ 000000BA  C3		      C 	ret
+ 000000BB		      C printAll ENDP
+			      C 
+ 000000BB		      C printProgramCounter PROC USES eax edx
+ 000000BD  A1 0000014A R      C 	mov eax, ProgramCounter
+ 000000C2  BA 00000075 R      C 	mov edx, offset DisplayPC
+ 000000C7  E8 00000000 E      C 	call WriteString
+ 000000CC  E8 00000000 E      C 	call WriteHex
+ 000000D1  E8 00000000 E      C 	call CrLf
+			      C 	ret
+ 000000D9		      C printProgramCounter ENDP
+			      C 
+ 000000D9		      C printInstructionList PROC USES eax edx ecx
+ 000000DC  B8 00000001	      C 	 mov eax, 1h
+ 000000E1  BA 0000008B R      C 	 mov edx, offset Instructions
+ 000000E6  66| B9 0008	      C 	 mov cx, 8
+ 000000EA		      C 	 iterate:
+ 000000EA  E8 00000000 E      C 		call WriteString
+ 000000EF  D1 E0	      C 		shl eax, 1h
+ 000000F1  E2 F7	      C 	 loop iterate
+			      C 	 ret
+ 000000F7		      C printInstructionList ENDP
+			      C 
+				INCLUDE pdp8-iot.inc
+			      C TITLE PDP8-InputOutputTransfer
+			      C 
+ 000000AB		      C .data
+ 000000AB 00000000	      C ReadyFlag		DWORD 0h
+ 000000AF 0000010B R	      C Devices			DWORD iotProcessor, paperTapeReader, paperTapePunch,
+	   00000121 R
+	   0000012C R
+	   00000116 R
+	   00000137 R
+			      C 					  consoleKeyboard, consolePrinter
+ 000000C3 5B 2A 5D 20 50      C TapeReader		BYTE  "[*] Paper Tape Reader: ", 0
+	   61 70 65 72 20
+	   54 61 70 65 20
+	   52 65 61 64 65
+	   72 3A 20 00
+ 000000DB 5B 2A 5D 20 50      C TapePunch		BYTE  "[*] Paper Tape Punch: ", 0
+	   61 70 65 72 20
+	   54 61 70 65 20
+	   50 75 6E 63 68
+	   3A 20 00
+ 000000F2 5B 2A 5D 20 43      C Printer			BYTE  "[*] Console Printer: ", 0
+	   6F 6E 73 6F 6C
+	   65 20 50 72 69
+	   6E 74 65 72 3A
+	   20 00
+			      C 
+ 000000F7		      C .code
+			      C ; === ALL I/O TRANSFER ===
+ 000000F7		      C getDevice PROC
+ 000000F7  55		      C 	push ebp
+ 000000F8  8B E5	      C 	mov esp, ebp
+ 000000FA  33 C0	      C 	xor eax, eax
+ 000000FC  8B 45 08	      C 	mov eax, [ebp + 8]
+ 000000FF  66| 25 01F8	      C 	and ax, 1F8h
+ 00000103  66| C1 E8 03	      C 	shr ax, 3
+ 00000107  8B E5	      C 	mov esp, ebp
+ 00000109  5D		      C 	pop ebp
+ 0000010A  C3		      C 	ret
+ 0000010B		      C getDevice ENDP
+			      C 
+			      C ; === INPUT ===
+			      C 
+ 0000010B		      C iotProcessor PROC
+ 0000010B  C7 05 00000146 R   C 	mov InterruptFlag, 1h
+	   00000001
+ 00000115  C3		      C 	ret
+ 00000116		      C iotProcessor ENDP
+			      C 
+ 00000116		      C consoleKeyboard PROC
+ 00000116  C7 05 00000146 R   C 	mov InterruptFlag, 1h
+	   00000001
+ 00000120  C3		      C 	ret
+ 00000121		      C consoleKeyboard ENDP
+			      C 
+			      C ; === OUTPUT ===
+			      C 
+ 00000121		      C paperTapeReader PROC
+ 00000121  BA 000000C3 R      C 	mov edx, offset TapeReader
+ 00000126  E8 00000000 E      C 	call writeString
+ 0000012B  C3		      C 	ret
+ 0000012C		      C paperTapeReader ENDP
+			      C 
+ 0000012C		      C paperTapePunch PROC
+ 0000012C  BA 000000DB R      C 	mov edx, offset TapePunch
+ 00000131  E8 00000000 E      C 	call writeString
+ 00000136  C3		      C 	ret
+ 00000137		      C paperTapePunch ENDP
+			      C 
+ 00000137		      C consolePrinter PROC
+ 00000137  BA 000000F2 R      C 	mov edx, offset Printer
+ 0000013C  E8 00000000 E      C 	call writeString
+ 00000141  C3		      C 	ret
+ 00000142		      C consolePrinter ENDP
+			      C 
+				INCLUDE pdp8-exec.inc
+			      C TITLE PDP8-Executable
+			      C 
+ 00000142		      C .code
+ 00000142		      C andAccumulator PROC
+ 00000142  E8 000002AA	      C 	call getCurrentInstruction
+ 00000147  50		      C 	push eax
+ 00000148  E8 0000011A	      C 	call getOffset
+ 0000014D  8B F0	      C 	mov esi, eax
+ 0000014F  66| 8B 04 75	      C 	mov ax, Memory[esi * TYPE Memory]
+	   00000150 R
+ 00000157  5B		      C 	pop ebx
+ 00000158  33 DB	      C 	xor ebx, ebx
+ 0000015A  66| 8B 1D	      C 	mov bx, Accumulator
+	   00000144 R
+ 00000161  23 D8	      C 	and ebx, eax
+ 00000163  66| 89 1D	      C 	mov Accumulator, bx
+	   00000144 R
+ 0000016A  C3		      C 	ret
+ 0000016B		      C andAccumulator ENDP
+			      C 
+ 0000016B		      C twosAdd PROC
+ 0000016B  E8 00000281	      C 	call getCurrentInstruction
+ 00000170  50		      C 	push eax
+ 00000171  E8 000000F1	      C 	call getOffset
+ 00000176  8B F0	      C 	mov esi, eax
+ 00000178  33 C0	      C 	xor eax, eax
+ 0000017A  66| 8B 04 75	      C 	mov ax, Memory[esi * TYPE Memory]
+	   00000150 R
+ 00000182  33 DB	      C 	xor ebx, ebx
+ 00000184  66| 8B 1D	      C 	mov bx, Accumulator
+	   00000144 R
+ 0000018B  03 C3	      C 	add eax, ebx
+ 0000018D  66| A3	      C 	mov Accumulator, ax
+	   00000144 R
+ 00000193  C3		      C 	ret
+ 00000194		      C twosAdd ENDP
+			      C 
+ 00000194		      C incrementSkipZero PROC
+ 00000194  E8 00000258	      C 	call getCurrentInstruction
+ 00000199  50		      C 	push eax
+ 0000019A  E8 000000C8	      C 	call getOffset
+ 0000019F  40		      C 	inc eax
+ 000001A0  85 C0	      C 	test eax, eax
+ 000001A2  75 06	      C 	jnz return
+ 000001A4  FF 05 0000014A R   C 	inc ProgramCounter
+ 000001AA		      C 	return:
+ 000001AA  C3		      C 	ret
+ 000001AB		      C incrementSkipZero ENDP
+			      C 
+ 000001AB		      C depositClearAccumulator PROC
+ 000001AB  E8 00000241	      C 	call getCurrentInstruction
+ 000001B0  50		      C 	push eax
+ 000001B1  E8 000000B1	      C 	call getOffset
+ 000001B6  33 C0	      C 	xor eax, eax
+ 000001B8  66| A1	      C 	mov ax, Accumulator
+	   00000144 R
+ 000001BE  66| 89 04 75	      C 	mov [esi * TYPE Memory], ax
+	   00000000
+ 000001C6  66| C7 05	      C 	mov Accumulator, 0h
+	   00000144 R
+	   0000
+ 000001CF  C3		      C 	ret
+ 000001D0		      C depositClearAccumulator ENDP
+			      C 
+ 000001D0		      C jumpSubroutine PROC
+ 000001D0  E8 0000021C	      C 	call getCurrentInstruction
+ 000001D5  50		      C 	push eax
+ 000001D6  E8 0000008C	      C 	call getOffset
+ 000001DB  8B D8	      C 	mov ebx, eax
+ 000001DD  43		      C 	inc ebx
+ 000001DE  89 1D 0000014A R   C 	mov ProgramCounter, ebx
+ 000001E4  66| 89 04 75	      C 	mov [esi * TYPE Memory], ax
+	   00000000
+ 000001EC  C3		      C 	ret
+ 000001ED		      C jumpSubroutine ENDP
+			      C 
+ 000001ED		      C jump PROC
+ 000001ED  E8 000001FF	      C 	call getCurrentInstruction
+ 000001F2  50		      C 	push eax
+ 000001F3  E8 0000006F	      C 	call getOffset
+ 000001F8  A3 0000014A R      C 	mov ProgramCounter, eax
+ 000001FD  C3		      C 	ret
+ 000001FE		      C jump ENDP
+			      C 
+ 000001FE		      C ioTransfer PROC
+ 000001FE  E8 000001EE	      C 	call getCurrentInstruction
+ 00000203  50		      C 	push eax
+ 00000204  E8 FFFFFEEE	      C 	call getDevice
+ 00000209  C3		      C 	ret
+ 0000020A		      C ioTransfer ENDP
+			      C 
+ 0000020A		      C operate PROC
+ 0000020A  E8 000001E2	      C 	call getCurrentInstruction
+ 0000020F  50		      C 	push eax
+ 00000210  E8 00000030	      C 	call getIndirect
+ 00000215  5B		      C 	pop ebx
+ 00000216  85 C0	      C 	test eax, eax
+ 00000218  75 05	      C 	jnz Continue
+ 0000021A  E8 00000093	      C 	call groupOne
+ 0000021F		      C 	Continue:
+ 0000021F  C3		      C 	ret
+ 00000220		      C operate ENDP
+			      C 
+ 00000220		      C getValueAt PROC
+ 00000220  55		      C 	push ebp
+ 00000221  8B EC	      C 	mov ebp, esp
+ 00000223  8B 75 08	      C 	mov esi, [ebp +8]
+ 00000226  66| 8B 04 75	      C 	mov ax, Memory[esi * TYPE Memory] 
+	   00000150 R
+ 0000022E  8B E5	      C 	mov esp, ebp
+ 00000230  5D		      C 	pop ebp
+ 00000231  C3		      C 	ret
+ 00000232		      C getValueAt ENDP
+			      C 
+ 00000232		      C getOpCode PROC
+ 00000232  55		      C 	push ebp
+ 00000233  8B EC	      C 	mov ebp, esp
+ 00000235  8B 45 08	      C 	mov eax, [ebp + 8]
+ 00000238  25 00000E00	      C 	and eax, 000000E00h
+ 0000023D  66| C1 E8 07	      C 	shr ax, 7h
+ 00000241  8B E5	      C 	mov esp, ebp
+ 00000243  5D		      C 	pop ebp
+ 00000244  C3		      C 	ret
+ 00000245		      C getOpCode ENDP
+			      C 
+ 00000245		      C getIndirect PROC
+ 00000245  55		      C 	push ebp
+ 00000246  8B EC	      C 	mov ebp, esp
+ 00000248  8B 45 08	      C 	mov eax, [ebp + 8]
+ 0000024B  25 00000100	      C 	and eax, 000000100h
+ 00000250  66| C1 E8 08	      C 	shr ax, 8h
+ 00000254  5D		      C 	pop ebp
+ 00000255  C3		      C 	ret
+ 00000256		      C getIndirect ENDP
+			      C 
+ 00000256		      C getPageBit PROC
+ 00000256  55		      C 	push ebp
+ 00000257  8B EC	      C 	mov ebp, esp
+ 00000259  8B 45 08	      C 	mov eax, [ebp + 8]
+ 0000025C  25 00000080	      C 	and eax, 000000080h
+ 00000261  66| C1 E8 07	      C 	shr ax, 7h
+ 00000265  5D		      C 	pop ebp
+ 00000266  C3		      C 	ret
+ 00000267		      C getPageBit ENDP
+			      C 
+ 00000267		      C getOffset PROC
+ 00000267  55		      C 	push ebp
+ 00000268  8B EC	      C 	mov ebp, esp
+ 0000026A  8B 45 08	      C 	mov eax, [ebp + 8]
+ 0000026D  83 E0 7F	      C 	and eax, 00000007Fh
+ 00000270  5D		      C 	pop ebp
+ 00000271  C3		      C 	ret
+ 00000272		      C getOffset ENDP
+			      C 
+				INCLUDE pdp8-operate.inc
+			      C TITLE PDP8-Operate
+			      C 
+ 00000108		      C .data
+ 00000108 00000000	      C GroupBase	    DWORD  0h
+ 0000010C 000002CC R	      C GroupOneTable   DWORD  clearAccumulator, clearLinkBit, onesComplementAccumulator, 
+	   000002D6 R
+	   000002E0 R
+	   000002EA R
+	   000002F4 R
+	   00000302 R
+	   00000323 R
+	   00000342 R
+	   0000034D R
+	   00000358 R
+			      C 					   complementLink, incrementAccumulator, rotateRight, rotateLeft, 
+			      C 					   rotateRightTwice, rotateLeftTwice, sixBitSwap
+ 00000134 000002CC R	      C GroupTwoTable   DWORD  clearAccumulator, skipMinusAccumulator, skipZeroAccumulator,
+	   00000383 R
+	   00000399 R
+	   000003A9 R
+			      C 					   skipNonZeroLink
+			      C 
+ 00000272		      C .code
+			      C ; === ALL GROUPS ===
+ 00000272		      C accessGroupTable PROC
+ 00000272  55		      C 	push ebp
+ 00000273  8B EC	      C 	mov ebp, esp
+ 00000275  8B 45 08	      C 	mov eax, [ebp + 8]
+ 00000278  A3 00000108 R      C 	mov GroupBase, eax
+ 0000027D  B9 00000007	      C 	mov ecx, 7h
+ 00000282		      C 	iterate:
+ 00000282  E8 0000016A	      C 		call getCurrentInstruction
+ 00000287  50		      C 		push eax
+ 00000288  E8 FFFFFFDA	      C 		call getOffset
+ 0000028D  5B		      C 		pop ebx
+ 0000028E  FE C9	      C 		dec cl
+ 00000290  66| D3 E8	      C 		shr ax, cl
+ 00000293  FE C1	      C 		inc cl
+ 00000295  66| 85 C0	      C 		test ax, ax
+ 00000298  74 12	      C 		jz continue
+ 0000029A  BB 00000007	      C 		mov ebx, 7h
+ 0000029F  2B D9	      C 		sub ebx, ecx
+ 000002A1  C1 E3 02	      C 		shl ebx, 2
+ 000002A4  8B B3 00000108 R   C 		mov esi, [GroupBase + ebx]
+ 000002AA  FF D6	      C 		call esi
+ 000002AC		      C 		continue:
+ 000002AC  E2 D4	      C 	loop iterate
+ 000002AE  8B E5	      C 	mov esp, ebp
+ 000002B0  5D		      C 	pop ebp
+ 000002B1  C3		      C 	ret
+ 000002B2		      C accessGroupTable ENDP
+			      C 
+ 000002B2		      C groupOne PROC
+ 000002B2  FF 35 0000010C R   C 	push GroupOneTable
+ 000002B8  E8 FFFFFFB5	      C 	call accessGroupTable
+ 000002BD  58		      C 	pop eax
+ 000002BE  C3		      C 	ret
+ 000002BF		      C groupOne ENDP
+			      C 
+ 000002BF		      C groupTwo PROC
+ 000002BF  FF 35 00000134 R   C 	push GroupTwoTable
+ 000002C5  E8 FFFFFFA8	      C 	call accessGroupTable
+ 000002CA  58		      C 	pop eax
+ 000002CB  C3		      C 	ret
+ 000002CC		      C groupTwo ENDP
+			      C 
+			      C ; === GROUP ONE ===
+			      C 
+ 000002CC		      C clearAccumulator PROC
+ 000002CC  66| C7 05	      C 	mov Accumulator, 0h
+	   00000144 R
+	   0000
+ 000002D5  C3		      C 	ret
+ 000002D6		      C clearAccumulator ENDP
+			      C 
+ 000002D6		      C clearLinkBit PROC
+ 000002D6  66| C7 05	      C 	mov Link, 0h
+	   0000014E R
+	   0000
+ 000002DF  C3		      C 	ret
+ 000002E0		      C clearLinkBit ENDP
+			      C 
+ 000002E0		      C onesComplementAccumulator PROC
+ 000002E0  66| C7 05	      C 	mov Accumulator, 0FFFh
+	   00000144 R
+	   0FFF
+ 000002E9  C3		      C 	ret
+ 000002EA		      C onesComplementAccumulator ENDP
+			      C 
+ 000002EA		      C complementLink PROC
+ 000002EA  66| C7 05	      C 	mov Link, 1h
+	   0000014E R
+	   0001
+ 000002F3  C3		      C 	ret
+ 000002F4		      C complementLink ENDP
+			      C 
+ 000002F4		      C incrementAccumulator PROC
+ 000002F4  66| A1	      C 	mov ax, Accumulator
+	   00000144 R
+ 000002FA  40		      C 	inc eax
+ 000002FB  66| A3	      C 	mov Accumulator, ax
+	   00000144 R
+ 00000301  C3		      C 	ret
+ 00000302		      C incrementAccumulator ENDP
+			      C 
+ 00000302		      C rotateRight PROC ; Test w/12 bits
+ 00000302  33 C0	      C 	xor eax, eax
+ 00000304  66| A1	      C 	mov ax, Accumulator
+	   00000144 R
+ 0000030A  A9 00000001	      C 	test eax, 1h
+ 0000030F  75 0A	      C 	jnz notSigned
+ 00000311  D1 E8	      C 	shr eax, 1h
+ 00000313  66| A3	      C 	mov Accumulator, ax
+	   00000144 R
+ 00000319  EB 07	      C 	jmp resume
+ 0000031B		      C 	notSigned:
+ 0000031B  D1 E8	      C 	shr eax, 1h
+ 0000031D  0D 00000800	      C 	or eax, 800h
+ 00000322		      C 	resume:
+ 00000322  C3		      C 	ret
+ 00000323		      C rotateRight ENDP
+			      C 
+ 00000323		      C rotateLeft PROC
+ 00000323  33 C0	      C 	xor eax, eax
+ 00000325  66| A1	      C 	mov ax, Accumulator
+	   00000144 R
+ 0000032B  A9 00000800	      C 	test eax, 800h
+ 00000330  75 0A	      C 	jnz nonZero
+ 00000332  D1 E0	      C 	shl eax, 1h
+ 00000334  66| A3	      C 	mov Accumulator, ax
+	   00000144 R
+ 0000033A  EB 05	      C 	jmp resume
+ 0000033C		      C 	nonZero:
+ 0000033C  D1 E0	      C 	shl eax, 1h
+ 0000033E  83 C8 01	      C 	or eax, 1h
+ 00000341		      C 	resume:
+ 00000341  C3		      C 	ret
+ 00000342		      C rotateLeft ENDP
+			      C 
+ 00000342		      C rotateRightTwice PROC
+ 00000342  E8 FFFFFFBB	      C 	call rotateRight
+ 00000347  E8 FFFFFFB6	      C 	call rotateRight
+ 0000034C  C3		      C 	ret
+ 0000034D		      C rotateRightTwice ENDP
+			      C 
+ 0000034D		      C rotateLeftTwice PROC
+ 0000034D  E8 FFFFFFD1	      C 	call rotateLeft
+ 00000352  E8 FFFFFFCC	      C 	call rotateLeft
+ 00000357  C3		      C 	ret
+ 00000358		      C rotateLeftTwice ENDP
+			      C 
+ 00000358		      C sixBitSwap PROC
+ 00000358  33 C0	      C 	xor eax, eax
+ 0000035A  66| A1	      C 	mov ax, Accumulator
+	   00000144 R
+ 00000360  66| 25 0FC0	      C 	and ax, 0FC0h
+ 00000364  66| C1 E8 06	      C 	shr ax, 6
+ 00000368  66| 8B D8	      C 	mov bx, ax
+ 0000036B  66| A1	      C 	mov ax, Accumulator
+	   00000144 R
+ 00000371  66| 83 E0 3F	      C 	and ax, 03Fh
+ 00000375  66| C1 E0 06	      C 	shl ax, 6
+ 00000379  66| 0B C3	      C 	or ax, bx
+ 0000037C  66| A3	      C 	mov Accumulator, ax
+	   00000144 R
+ 00000382  C3		      C 	ret
+ 00000383		      C sixBitSwap ENDP
+			      C 
+			      C ; === GROUP TWO (OR) ===
+			      C 
+ 00000383		      C skipMinusAccumulator PROC
+ 00000383  33 C0	      C 	xor eax, eax
+ 00000385  66| A1	      C 	mov ax, Accumulator
+	   00000144 R
+ 0000038B  66| C1 E8 0B	      C 	shr ax, 0Bh
+ 0000038F  85 C0	      C 	test eax, eax
+ 00000391  74 05	      C 	jz done
+ 00000393  E8 00000070	      C 	call incrementProgramCounter
+ 00000398		      C 	done:	
+ 00000398  C3		      C 	ret
+ 00000399		      C skipMinusAccumulator ENDP
+			      C 
+ 00000399		      C skipZeroAccumulator PROC
+ 00000399  33 C0	      C 	xor eax, eax
+ 0000039B  66| A1	      C 	mov ax, Accumulator
+	   00000144 R
+ 000003A1  75 05	      C 	jnz done
+ 000003A3  E8 00000060	      C 	call incrementProgramCounter
+ 000003A8		      C 	done:
+ 000003A8  C3		      C 	ret
+ 000003A9		      C skipZeroAccumulator ENDP
+			      C 
+ 000003A9		      C skipNonZeroLink PROC
+ 000003A9  33 C0	      C 	xor eax, eax
+ 000003AB  66| A1	      C 	mov ax, Link
+	   0000014E R
+ 000003B1  85 C0	      C 	test eax, eax
+ 000003B3  74 05	      C 	jz done
+ 000003B5  E8 0000004E	      C 	call incrementProgramCounter
+ 000003BA		      C 	done:
+ 000003BA  C3		      C 	ret
+ 000003BB		      C skipNonZeroLink ENDP
+			      C 
+			      C ; === GROUP TWO (AND) ===
+			      C 
+ 000003BB		      C skipPositiveAccumulator PROC
+ 000003BB  33 C0	      C 	xor eax, eax
+ 000003BD  66| A1	      C 	mov ax, Accumulator
+	   00000144 R
+ 000003C3  66| 25 0800	      C 	and ax, 800h
+ 000003C7  74 05	      C 	jz done
+ 000003C9  E8 0000003A	      C 	call incrementProgramCounter
+ 000003CE		      C 	done:
+ 000003CE  C3		      C 	ret
+ 000003CF		      C skipPositiveAccumulator ENDP
+			      C 
+ 000003CF		      C skipNonZeroAccumulator PROC
+ 000003CF  33 C0	      C 	xor eax, eax
+ 000003D1  66| A1	      C 	mov ax, Accumulator
+	   00000144 R
+ 000003D7  85 C0	      C 	test eax, eax
+ 000003D9  74 05	      C 	jz done
+ 000003DB  E8 00000028	      C 	call incrementProgramCounter
+ 000003E0		      C 	done:
+ 000003E0  C3		      C 	ret
+ 000003E1		      C skipNonZeroAccumulator ENDP
+			      C 
+ 000003E1		      C skipZeroLink PROC
+ 000003E1  33 C0	      C 	xor eax, eax
+ 000003E3  66| A1	      C 	mov ax, Link
+	   0000014E R
+ 000003E9  75 05	      C 	jnz done
+ 000003EB  E8 00000018	      C 	call incrementProgramCounter
+ 000003F0		      C 	done:
+ 000003F0  C3		      C 	ret
+ 000003F1		      C skipZeroLink ENDP
+			      C 
+
+ 00000144			.data
+ 00000144 0000			Accumulator			WORD	0h
+ 00000146 00000000		InterruptFlag		DWORD	0h
+ 0000014A 00000080		ProgramCounter		DWORD	128d
+ 0000014E 0000			Link				WORD	0
+ 00000150  00000080 [		Memory				WORD	128 DUP(0), 110011111111b, 4063 DUP(0)
+	    0000
+	   ] 0CFF
+	   00000FDF [
+	    0000
+	   ]
+ 00002210 0000			CurrentInstruction	WORD	0
+ 00002212 00000142 R		InstructionTable	DWORD	andAccumulator, twosAdd, incrementSkipZero,
+	   0000016B R
+	   00000194 R
+	   000001AB R
+	   000001D0 R
+	   000001ED R
+	   000001FE R
+	   0000020A R
+											depositClearAccumulator, jumpSubroutine, jump,
+											ioTransfer, operate
+
+ 000003F1			.code
+ 000003F1			getCurrentInstruction PROC
+ 000003F1  33 C0			xor eax, eax
+ 000003F3  8B 35 0000014A R		mov esi, ProgramCounter
+ 000003F9  66| 8B 04 75			mov ax, Memory[esi * TYPE Memory]
+	   00000150 R
+ 00000401  66| A3			mov currentInstruction, ax
+	   00002210 R
+ 00000407  C3				ret
+ 00000408			getCurrentInstruction ENDP
+
+ 00000408			incrementProgramCounter PROC
+ 00000408  A1 0000014A R		mov eax, ProgramCounter
+ 0000040D  40				inc eax
+ 0000040E  A3 0000014A R		mov ProgramCounter, eax
+ 00000413  C3				ret
+ 00000414			incrementProgramCounter ENDP
+
+ 00000414			executeInstruction PROC
+ 00000414  E8 FFFFFFD8			call getCurrentInstruction
+ 00000419  50				push eax
+ 0000041A  E8 FFFFFE13			call getOpCode
+ 0000041F  BE 00000000			mov esi, 0h
+ 00000424  8B B0 00002212 R		mov esi, [InstructionTable + eax]
+ 0000042A  FF D6			call esi
+ 0000042C  58				pop eax
+ 0000042D  C3				ret	
+ 0000042E			executeInstruction ENDP
+
+ 0000042E			cycle PROC
+ 0000042E  B9 00000001			mov ecx, 1h
+ 00000433				cpuCycle:
+ 00000433  51					push ecx
+ 00000434  E8 FFFFFFDB				call executeInstruction
+ 00000439  E8 FFFFFFCA				call incrementProgramCounter
+ 0000043E  59					pop ecx
+ 0000043F  E2 F2			loop cpuCycle
+ 00000441  C3				ret
+ 00000442			cycle ENDP
+
+ 00000442			main PROC
+ 00000442  E8 FFFFFBB9			call printSplash
+ 00000447  E8 FFFFFFE2			call cycle
+ 0000044C  C3				ret
+ 0000044D			main ENDP
+
+				END main
+
+				END
+Microsoft (R) Macro Assembler Version 10.00.30319.01	    04/25/11 11:28:17
+PDP8-Simulato						     Symbols 2 - 1
+
+
+
+
+Structures and Unions:
+
+                N a m e                  Size
+                                         Offset      Type
+
+CONSOLE_CURSOR_INFO  . . . . . .	 00000008
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+  bVisible . . . . . . . . . . .	 00000004	 DWord
+CONSOLE_SCREEN_BUFFER_INFO . . .	 00000016
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+  dwCursorPosition . . . . . . .	 00000004	 DWord
+  wAttributes  . . . . . . . . .	 00000008	 Word
+  srWindow . . . . . . . . . . .	 0000000A	 QWord
+  dwMaximumWindowSize  . . . . .	 00000012	 DWord
+COORD  . . . . . . . . . . . . .	 00000004
+  X  . . . . . . . . . . . . . .	 00000000	 Word
+  Y  . . . . . . . . . . . . . .	 00000002	 Word
+FILETIME . . . . . . . . . . . .	 00000008
+  loDateTime . . . . . . . . . .	 00000000	 DWord
+  hiDateTime . . . . . . . . . .	 00000004	 DWord
+FOCUS_EVENT_RECORD . . . . . . .	 00000004
+  bSetFocus  . . . . . . . . . .	 00000000	 DWord
+FPU_ENVIRON  . . . . . . . . . .	 0000001C
+  controlWord  . . . . . . . . .	 00000000	 Word
+  statusWord . . . . . . . . . .	 00000004	 Word
+  tagWord  . . . . . . . . . . .	 00000008	 Word
+  instrPointerOffset . . . . . .	 0000000C	 DWord
+  instrPointerSelector . . . . .	 00000010	 DWord
+  operandPointerOffset . . . . .	 00000014	 DWord
+  operandPointerSelector . . . .	 00000018	 Word
+INPUT_RECORD . . . . . . . . . .	 00000014
+  EventType  . . . . . . . . . .	 00000000	 Word
+  Event  . . . . . . . . . . . .	 00000004	 XmmWord
+  bKeyDown . . . . . . . . . . .	 00000000	 DWord
+  wRepeatCount . . . . . . . . .	 00000004	 Word
+  wVirtualKeyCode  . . . . . . .	 00000006	 Word
+  wVirtualScanCode . . . . . . .	 00000008	 Word
+  uChar  . . . . . . . . . . . .	 0000000A	 Word
+  UnicodeChar  . . . . . . . . .	 00000000	 Word
+  AsciiChar  . . . . . . . . . .	 00000000	 Byte
+  dwControlKeyState  . . . . . .	 0000000C	 DWord
+  dwMousePosition  . . . . . . .	 00000000	 DWord
+  dwButtonState  . . . . . . . .	 00000004	 DWord
+  dwMouseControlKeyState . . . .	 00000008	 DWord
+  dwEventFlags . . . . . . . . .	 0000000C	 DWord
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+  dwCommandId  . . . . . . . . .	 00000000	 DWord
+  bSetFocus  . . . . . . . . . .	 00000000	 DWord
+KEY_EVENT_RECORD . . . . . . . .	 00000010
+  bKeyDown . . . . . . . . . . .	 00000000	 DWord
+  wRepeatCount . . . . . . . . .	 00000004	 Word
+  wVirtualKeyCode  . . . . . . .	 00000006	 Word
+  wVirtualScanCode . . . . . . .	 00000008	 Word
+  uChar  . . . . . . . . . . . .	 0000000A	 Word
+  UnicodeChar  . . . . . . . . .	 00000000	 Word
+  AsciiChar  . . . . . . . . . .	 00000000	 Byte
+  dwControlKeyState  . . . . . .	 0000000C	 DWord
+MENU_EVENT_RECORD  . . . . . . .	 00000004
+  dwCommandId  . . . . . . . . .	 00000000	 DWord
+MOUSE_EVENT_RECORD . . . . . . .	 00000010
+  dwMousePosition  . . . . . . .	 00000000	 DWord
+  dwButtonState  . . . . . . . .	 00000004	 DWord
+  dwMouseControlKeyState . . . .	 00000008	 DWord
+  dwEventFlags . . . . . . . . .	 0000000C	 DWord
+SMALL_RECT . . . . . . . . . . .	 00000008
+  Left . . . . . . . . . . . . .	 00000000	 Word
+  Top  . . . . . . . . . . . . .	 00000002	 Word
+  Right  . . . . . . . . . . . .	 00000004	 Word
+  Bottom . . . . . . . . . . . .	 00000006	 Word
+SYSTEMTIME . . . . . . . . . . .	 00000010
+  wYear  . . . . . . . . . . . .	 00000000	 Word
+  wMonth . . . . . . . . . . . .	 00000002	 Word
+  wDayOfWeek . . . . . . . . . .	 00000004	 Word
+  wDay . . . . . . . . . . . . .	 00000006	 Word
+  wHour  . . . . . . . . . . . .	 00000008	 Word
+  wMinute  . . . . . . . . . . .	 0000000A	 Word
+  wSecond  . . . . . . . . . . .	 0000000C	 Word
+  wMilliseconds  . . . . . . . .	 0000000E	 Word
+WINDOW_BUFFER_SIZE_RECORD  . . .	 00000004
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+FLAT . . . . . . . . . . . . . .	GROUP
+STACK  . . . . . . . . . . . . .	32 Bit	 00001000 Para	  Stack	  'STACK'	 
+_DATA  . . . . . . . . . . . . .	32 Bit	 00002232 Para	  Public  'DATA'	
+_TEXT  . . . . . . . . . . . . .	32 Bit	 0000044D Para	  Public  'CODE'	
+
+
+Procedures, parameters, and locals:
+
+                N a m e                 Type     Value    Attr
+
+CloseFile  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+CloseHandle  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Clrscr . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+CreateFileA  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+CreateOutputFile . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Crlf . . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Delay  . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+DumpMem  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+DumpRegs . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ExitProcess  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FileTimeToDosDateTime  . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FileTimeToSystemTime . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FlushConsoleInputBuffer  . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FormatMessageA . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetCommandLineA  . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetCommandTail . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleCP . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleCursorInfo . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleMode . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleScreenBufferInfo . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetDateTime  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetFileTime  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetKeyState  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetLastError . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetLocalTime . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetMaxXY . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetMseconds  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetNumberOfConsoleInputEvents  .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetProcessHeap . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetStdHandle . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetSystemTime  . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetTextColor . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetTickCount . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Gotoxy . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapAlloc  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapCreate . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapDestroy  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapFree . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapSize . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+IsDigit  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+LocalFree  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+MessageBoxA  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+MsgBoxAsk  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+MsgBox . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+OpenInputFile  . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ParseDecimal32 . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ParseInteger32 . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+PeekConsoleInputA  . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Random32 . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+RandomRange  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Randomize  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadChar . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadConsoleA . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadConsoleInputA  . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadDec  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadFile . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadFloat  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadFromFile . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadHex  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadInt  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadKeyFlush . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadKey  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadString . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleCursorInfo . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleCursorPosition . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleMode . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleScreenBufferSize . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleTextAttribute  . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleTitleA . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleWindowInfo . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetFilePointer . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetLocalTime . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetTextColor . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ShowFPUStack . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Sleep  . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+StrLength  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_compare  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_copy . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_length . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_trim . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_ucase  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SystemTimeToFileTime . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WaitMsg  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteBinB  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteBin . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteChar  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteConsoleA  . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteConsoleOutputAttribute  . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteConsoleOutputCharacterA . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteDec . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteFile  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteFloat . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteHexB  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteHex . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteInt . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteStackFrameName  . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteStackFrame  . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteString  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteToFile  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteWindowsMsg  . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+accessGroupTable . . . . . . . .	P Near	 00000272 _TEXT	Length= 00000040 Public STDCALL
+  iterate  . . . . . . . . . . .	L Near	 00000282 _TEXT	
+  continue . . . . . . . . . . .	L Near	 000002AC _TEXT	
+andAccumulator . . . . . . . . .	P Near	 00000142 _TEXT	Length= 00000029 Public STDCALL
+clearAccumulator . . . . . . . .	P Near	 000002CC _TEXT	Length= 0000000A Public STDCALL
+clearLinkBit . . . . . . . . . .	P Near	 000002D6 _TEXT	Length= 0000000A Public STDCALL
+complementLink . . . . . . . . .	P Near	 000002EA _TEXT	Length= 0000000A Public STDCALL
+consoleKeyboard  . . . . . . . .	P Near	 00000116 _TEXT	Length= 0000000B Public STDCALL
+consolePrinter . . . . . . . . .	P Near	 00000137 _TEXT	Length= 0000000B Public STDCALL
+cycle  . . . . . . . . . . . . .	P Near	 0000042E _TEXT	Length= 00000014 Public STDCALL
+  cpuCycle . . . . . . . . . . .	L Near	 00000433 _TEXT	
+depositClearAccumulator  . . . .	P Near	 000001AB _TEXT	Length= 00000025 Public STDCALL
+executeInstruction . . . . . . .	P Near	 00000414 _TEXT	Length= 0000001A Public STDCALL
+getCurrentInstruction  . . . . .	P Near	 000003F1 _TEXT	Length= 00000017 Public STDCALL
+getDevice  . . . . . . . . . . .	P Near	 000000F7 _TEXT	Length= 00000014 Public STDCALL
+getIndirect  . . . . . . . . . .	P Near	 00000245 _TEXT	Length= 00000011 Public STDCALL
+getOffset  . . . . . . . . . . .	P Near	 00000267 _TEXT	Length= 0000000B Public STDCALL
+getOpCode  . . . . . . . . . . .	P Near	 00000232 _TEXT	Length= 00000013 Public STDCALL
+getPageBit . . . . . . . . . . .	P Near	 00000256 _TEXT	Length= 00000011 Public STDCALL
+getValueAt . . . . . . . . . . .	P Near	 00000220 _TEXT	Length= 00000012 Public STDCALL
+groupOne . . . . . . . . . . . .	P Near	 000002B2 _TEXT	Length= 0000000D Public STDCALL
+groupTwo . . . . . . . . . . . .	P Near	 000002BF _TEXT	Length= 0000000D Public STDCALL
+incrementAccumulator . . . . . .	P Near	 000002F4 _TEXT	Length= 0000000E Public STDCALL
+incrementProgramCounter  . . . .	P Near	 00000408 _TEXT	Length= 0000000C Public STDCALL
+incrementSkipZero  . . . . . . .	P Near	 00000194 _TEXT	Length= 00000017 Public STDCALL
+  return . . . . . . . . . . . .	L Near	 000001AA _TEXT	
+ioTransfer . . . . . . . . . . .	P Near	 000001FE _TEXT	Length= 0000000C Public STDCALL
+iotProcessor . . . . . . . . . .	P Near	 0000010B _TEXT	Length= 0000000B Public STDCALL
+jumpSubroutine . . . . . . . . .	P Near	 000001D0 _TEXT	Length= 0000001D Public STDCALL
+jump . . . . . . . . . . . . . .	P Near	 000001ED _TEXT	Length= 00000011 Public STDCALL
+main . . . . . . . . . . . . . .	P Near	 00000442 _TEXT	Length= 0000000B Public STDCALL
+onesComplementAccumulator  . . .	P Near	 000002E0 _TEXT	Length= 0000000A Public STDCALL
+operate  . . . . . . . . . . . .	P Near	 0000020A _TEXT	Length= 00000016 Public STDCALL
+  Continue . . . . . . . . . . .	L Near	 0000021F _TEXT	
+paperTapePunch . . . . . . . . .	P Near	 0000012C _TEXT	Length= 0000000B Public STDCALL
+paperTapeReader  . . . . . . . .	P Near	 00000121 _TEXT	Length= 0000000B Public STDCALL
+printAll . . . . . . . . . . . .	P Near	 000000A1 _TEXT	Length= 0000001A Public STDCALL
+printIndirect  . . . . . . . . .	P Near	 0000003E _TEXT	Length= 00000023 Public STDCALL
+printInstructionList . . . . . .	P Near	 000000D9 _TEXT	Length= 0000001E Public STDCALL
+  iterate  . . . . . . . . . . .	L Near	 000000EA _TEXT	
+printOffset  . . . . . . . . . .	P Near	 00000084 _TEXT	Length= 0000001D Public STDCALL
+printOpCode  . . . . . . . . . .	P Near	 0000001E _TEXT	Length= 00000020 Public STDCALL
+printPageNumber  . . . . . . . .	P Near	 00000061 _TEXT	Length= 00000023 Public STDCALL
+printProgramCounter  . . . . . .	P Near	 000000BB _TEXT	Length= 0000001E Public STDCALL
+printSplash  . . . . . . . . . .	P Near	 00000000 _TEXT	Length= 0000001E Public STDCALL
+printf . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External C
+rotateLeftTwice  . . . . . . . .	P Near	 0000034D _TEXT	Length= 0000000B Public STDCALL
+rotateLeft . . . . . . . . . . .	P Near	 00000323 _TEXT	Length= 0000001F Public STDCALL
+  nonZero  . . . . . . . . . . .	L Near	 0000033C _TEXT	
+  resume . . . . . . . . . . . .	L Near	 00000341 _TEXT	
+rotateRightTwice . . . . . . . .	P Near	 00000342 _TEXT	Length= 0000000B Public STDCALL
+rotateRight  . . . . . . . . . .	P Near	 00000302 _TEXT	Length= 00000021 Public STDCALL
+  notSigned  . . . . . . . . . .	L Near	 0000031B _TEXT	
+  resume . . . . . . . . . . . .	L Near	 00000322 _TEXT	
+scanf  . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External C
+sixBitSwap . . . . . . . . . . .	P Near	 00000358 _TEXT	Length= 0000002B Public STDCALL
+skipMinusAccumulator . . . . . .	P Near	 00000383 _TEXT	Length= 00000016 Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 00000398 _TEXT	
+skipNonZeroAccumulator . . . . .	P Near	 000003CF _TEXT	Length= 00000012 Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 000003E0 _TEXT	
+skipNonZeroLink  . . . . . . . .	P Near	 000003A9 _TEXT	Length= 00000012 Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 000003BA _TEXT	
+skipPositiveAccumulator  . . . .	P Near	 000003BB _TEXT	Length= 00000014 Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 000003CE _TEXT	
+skipZeroAccumulator  . . . . . .	P Near	 00000399 _TEXT	Length= 00000010 Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 000003A8 _TEXT	
+skipZeroLink . . . . . . . . . .	P Near	 000003E1 _TEXT	Length= 00000010 Public STDCALL
+  done . . . . . . . . . . . . .	L Near	 000003F0 _TEXT	
+twosAdd  . . . . . . . . . . . .	P Near	 0000016B _TEXT	Length= 00000029 Public STDCALL
+wsprintfA  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External C
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 00000000h   
+@DataSize  . . . . . . . . . . .	Number	 00000000h   
+@Interface . . . . . . . . . . .	Number	 00000003h   
+@Model . . . . . . . . . . . . .	Number	 00000007h   
+@code  . . . . . . . . . . . . .	Text   	 _TEXT
+@data  . . . . . . . . . . . . .	Text   	 FLAT
+@fardata?  . . . . . . . . . . .	Text   	 FLAT
+@fardata . . . . . . . . . . . .	Text   	 FLAT
+@stack . . . . . . . . . . . . .	Text   	 FLAT
+ALT_MASK . . . . . . . . . . . .	Number	 00000003h   
+Accumulator  . . . . . . . . . .	Word	 00000144 _DATA	
+Address  . . . . . . . . . . . .	Byte	 00000051 _DATA	
+CAPSLOCK_ON  . . . . . . . . . .	Number	 00000080h   
+CREATE_ALWAYS  . . . . . . . . .	Number	 00000002h   
+CREATE_NEW . . . . . . . . . . .	Number	 00000001h   
+CTRL_MASK  . . . . . . . . . . .	Number	 0000000Ch   
+CreateFile . . . . . . . . . . .	Text   	 CreateFileA
+CurrentInstruction . . . . . . .	Word	 00002210 _DATA	
+DO_NOT_SHARE . . . . . . . . . .	Number	 00000000h   
+Devices  . . . . . . . . . . . .	DWord	 000000AF _DATA	
+DisplayPC  . . . . . . . . . . .	Byte	 00000075 _DATA	
+ENABLE_ECHO_INPUT  . . . . . . .	Number	 00000004h   
+ENABLE_LINE_INPUT  . . . . . . .	Number	 00000002h   
+ENABLE_MOUSE_INPUT . . . . . . .	Number	 00000010h   
+ENABLE_PROCESSED_INPUT . . . . .	Number	 00000001h   
+ENABLE_PROCESSED_OUTPUT  . . . .	Number	 00000001h   
+ENABLE_WINDOW_INPUT  . . . . . .	Number	 00000008h   
+ENABLE_WRAP_AT_EOL_OUTPUT  . . .	Number	 00000002h   
+ENHANCED_KEY . . . . . . . . . .	Number	 00000100h   
+FALSE  . . . . . . . . . . . . .	Number	 00000000h   
+FILE_APPEND_DATA . . . . . . . .	Number	 00000004h   
+FILE_ATTRIBUTE_ARCHIVE . . . . .	Number	 00000020h   
+FILE_ATTRIBUTE_COMPRESSED  . . .	Number	 00000800h   
+FILE_ATTRIBUTE_DEVICE  . . . . .	Number	 00000040h   
+FILE_ATTRIBUTE_DIRECTORY . . . .	Number	 00000010h   
+FILE_ATTRIBUTE_ENCRYPTED . . . .	Number	 00004000h   
+FILE_ATTRIBUTE_HIDDEN  . . . . .	Number	 00000002h   
+FILE_ATTRIBUTE_NORMAL  . . . . .	Number	 00000080h   
+FILE_ATTRIBUTE_NOT_CONTENT_INDEXED .	Number	 00002000h   
+FILE_ATTRIBUTE_OFFLINE . . . . .	Number	 00001000h   
+FILE_ATTRIBUTE_READONLY  . . . .	Number	 00000001h   
+FILE_ATTRIBUTE_REPARSE_POINT . .	Number	 00000400h   
+FILE_ATTRIBUTE_SPARSE_FILE . . .	Number	 00000200h   
+FILE_ATTRIBUTE_SYSTEM  . . . . .	Number	 00000004h   
+FILE_ATTRIBUTE_TEMPORARY . . . .	Number	 00000100h   
+FILE_BEGIN . . . . . . . . . . .	Number	 00000000h   
+FILE_CURRENT . . . . . . . . . .	Number	 00000001h   
+FILE_DELETE_CHILD  . . . . . . .	Number	 00000040h   
+FILE_END . . . . . . . . . . . .	Number	 00000002h   
+FILE_READ_DATA . . . . . . . . .	Number	 00000001h   
+FILE_SHARE_DELETE  . . . . . . .	Number	 00000004h   
+FILE_SHARE_READ  . . . . . . . .	Number	 00000001h   
+FILE_SHARE_WRITE . . . . . . . .	Number	 00000002h   
+FILE_WRITE_DATA  . . . . . . . .	Number	 00000002h   
+FOCUS_EVENT  . . . . . . . . . .	Number	 00000010h   
+FORMAT_MESSAGE_ALLOCATE_BUFFER .	Number	 00000100h   
+FORMAT_MESSAGE_FROM_SYSTEM . . .	Number	 00001000h   
+FormatMessage  . . . . . . . . .	Text   	 FormatMessageA
+GENERIC_ALL  . . . . . . . . . .	Number	 10000000h   
+GENERIC_EXECUTE  . . . . . . . .	Number	 20000000h   
+GENERIC_READ . . . . . . . . . .	Number	 -80000000h   
+GENERIC_WRITE  . . . . . . . . .	Number	 40000000h   
+GetCommandLine . . . . . . . . .	Text   	 GetCommandLineA
+GroupBase  . . . . . . . . . . .	DWord	 00000108 _DATA	
+GroupOneTable  . . . . . . . . .	DWord	 0000010C _DATA	
+GroupTwoTable  . . . . . . . . .	DWord	 00000134 _DATA	
+HANDLE . . . . . . . . . . . . .	Text   	 DWORD
+HEAP_GENERATE_EXCEPTIONS . . . .	Number	 00000004h   
+HEAP_GROWABLE  . . . . . . . . .	Number	 00000002h   
+HEAP_NO_SERIALIZE  . . . . . . .	Number	 00000001h   
+HEAP_REALLOC_IN_PLACE_ONLY . . .	Number	 00000010h   
+HEAP_ZERO_MEMORY . . . . . . . .	Number	 00000008h   
+IDABORT  . . . . . . . . . . . .	Number	 00000003h   
+IDCANCEL . . . . . . . . . . . .	Number	 00000002h   
+IDCLOSE  . . . . . . . . . . . .	Number	 00000008h   
+IDCONTINUE . . . . . . . . . . .	Number	 0000000Bh   
+IDHELP . . . . . . . . . . . . .	Number	 00000009h   
+IDIGNORE . . . . . . . . . . . .	Number	 00000005h   
+IDNO . . . . . . . . . . . . . .	Number	 00000007h   
+IDOK . . . . . . . . . . . . . .	Number	 00000001h   
+IDRETRY  . . . . . . . . . . . .	Number	 00000004h   
+IDTIMEOUT  . . . . . . . . . . .	Number	 00007D00h   
+IDTRYAGAIN . . . . . . . . . . .	Number	 0000000Ah   
+IDYES  . . . . . . . . . . . . .	Number	 00000006h   
+INVALID_HANDLE_VALUE . . . . . .	Number	 -00000001h   
+Indirect . . . . . . . . . . . .	Byte	 0000005D _DATA	
+InstructionCount . . . . . . . .	Word	 0000004F _DATA	
+InstructionPrompt  . . . . . . .	Byte	 00000031 _DATA	
+InstructionTable . . . . . . . .	DWord	 00002212 _DATA	
+Instructions . . . . . . . . . .	Byte	 0000008B _DATA	
+InterruptFlag  . . . . . . . . .	DWord	 00000146 _DATA	
+KBDOWN_FLAG  . . . . . . . . . .	Number	 00000001h   
+KEY_EVENT  . . . . . . . . . . .	Number	 00000001h   
+KEY_MASKS  . . . . . . . . . . .	Number	 0000001Fh   
+LEFT_ALT_PRESSED . . . . . . . .	Number	 00000002h   
+LEFT_CTRL_PRESSED  . . . . . . .	Number	 00000008h   
+Link . . . . . . . . . . . . . .	Word	 0000014E _DATA	
+MB_ABORTRETRYIGNORE  . . . . . .	Number	 00000002h   
+MB_APPLMODAL . . . . . . . . . .	Number	 00000000h   
+MB_CANCELTRYCONTINUE . . . . . .	Number	 00000006h   
+MB_DEFBUTTON1  . . . . . . . . .	Number	 00000000h   
+MB_DEFBUTTON2  . . . . . . . . .	Number	 00000100h   
+MB_DEFBUTTON3  . . . . . . . . .	Number	 00000200h   
+MB_DEFBUTTON4  . . . . . . . . .	Number	 00000300h   
+MB_HELP  . . . . . . . . . . . .	Number	 00004000h   
+MB_ICONASTERISK  . . . . . . . .	Number	 00000040h   
+MB_ICONERROR . . . . . . . . . .	Number	 00000010h   
+MB_ICONEXCLAMATION . . . . . . .	Number	 00000030h   
+MB_ICONHAND  . . . . . . . . . .	Number	 00000010h   
+MB_ICONINFORMATION . . . . . . .	Number	 00000040h   
+MB_ICONQUESTION  . . . . . . . .	Number	 00000020h   
+MB_ICONSTOP  . . . . . . . . . .	Number	 00000010h   
+MB_ICONWARNING . . . . . . . . .	Number	 00000030h   
+MB_OKCANCEL  . . . . . . . . . .	Number	 00000001h   
+MB_OK  . . . . . . . . . . . . .	Number	 00000000h   
+MB_RETRYCANCEL . . . . . . . . .	Number	 00000005h   
+MB_SYSTEMMODAL . . . . . . . . .	Number	 00001000h   
+MB_TASKMODAL . . . . . . . . . .	Number	 00002000h   
+MB_USERICON  . . . . . . . . . .	Number	 00000080h   
+MB_YESNOCANCEL . . . . . . . . .	Number	 00000003h   
+MB_YESNO . . . . . . . . . . . .	Number	 00000004h   
+MENU_EVENT . . . . . . . . . . .	Number	 00000008h   
+MOUSE_EVENT  . . . . . . . . . .	Number	 00000002h   
+Memory . . . . . . . . . . . . .	Word	 00000150 _DATA	
+MessageBox . . . . . . . . . . .	Text   	 MessageBoxA
+NULL . . . . . . . . . . . . . .	Number	 00000000h   
+NUMLOCK_ON . . . . . . . . . . .	Number	 00000020h   
+OPEN_ALWAYS  . . . . . . . . . .	Number	 00000004h   
+OPEN_EXISTING  . . . . . . . . .	Number	 00000003h   
+PageNumber . . . . . . . . . . .	Byte	 0000006D _DATA	
+PeekConsoleInput . . . . . . . .	Text   	 PeekConsoleInputA
+Printer  . . . . . . . . . . . .	Byte	 000000F2 _DATA	
+ProgramCounter . . . . . . . . .	DWord	 0000014A _DATA	
+RIGHT_ALT_PRESSED  . . . . . . .	Number	 00000001h   
+RIGHT_CTRL_PRESSED . . . . . . .	Number	 00000004h   
+ReadConsoleInput . . . . . . . .	Text   	 ReadConsoleInputA
+ReadConsole  . . . . . . . . . .	Text   	 ReadConsoleA
+ReadyFlag  . . . . . . . . . . .	DWord	 000000AB _DATA	
+SCROLLLOCK_ON  . . . . . . . . .	Number	 00000040h   
+SHIFT_MASK . . . . . . . . . . .	Number	 00000010h   
+SHIFT_PRESSED  . . . . . . . . .	Number	 00000010h   
+STD_ERROR_HANDLE . . . . . . . .	Number	 -0000000Ch   
+STD_INPUT_HANDLE . . . . . . . .	Number	 -0000000Ah   
+STD_OUTPUT_HANDLE  . . . . . . .	Number	 -0000000Bh   
+SetConsoleTitle  . . . . . . . .	Text   	 SetConsoleTitleA
+Splash . . . . . . . . . . . . .	Byte	 0000000E _DATA	
+TAB  . . . . . . . . . . . . . .	Number	 00000009h   
+TRUE . . . . . . . . . . . . . .	Number	 00000001h   
+TRUNCATE_EXISTING  . . . . . . .	Number	 00000005h   
+TapePunch  . . . . . . . . . . .	Byte	 000000DB _DATA	
+TapeReader . . . . . . . . . . .	Byte	 000000C3 _DATA	
+UserInput  . . . . . . . . . . .	Byte	 00000000 _DATA	
+VK_11  . . . . . . . . . . . . .	Number	 000000BDh   
+VK_12  . . . . . . . . . . . . .	Number	 000000BBh   
+VK_ADD . . . . . . . . . . . . .	Number	 0000006Bh   
+VK_BACK  . . . . . . . . . . . .	Number	 00000008h   
+VK_CANCEL  . . . . . . . . . . .	Number	 00000003h   
+VK_CAPITAL . . . . . . . . . . .	Number	 00000014h   
+VK_CLEAR . . . . . . . . . . . .	Number	 0000000Ch   
+VK_CONTROL . . . . . . . . . . .	Number	 00000011h   
+VK_DECIMAL . . . . . . . . . . .	Number	 0000006Eh   
+VK_DELETE  . . . . . . . . . . .	Number	 0000002Eh   
+VK_DIVIDE  . . . . . . . . . . .	Number	 0000006Fh   
+VK_DOWN  . . . . . . . . . . . .	Number	 00000028h   
+VK_END . . . . . . . . . . . . .	Number	 00000023h   
+VK_ESCAPE  . . . . . . . . . . .	Number	 0000001Bh   
+VK_EXECUTE . . . . . . . . . . .	Number	 0000002Bh   
+VK_F10 . . . . . . . . . . . . .	Number	 00000079h   
+VK_F11 . . . . . . . . . . . . .	Number	 0000007Ah   
+VK_F12 . . . . . . . . . . . . .	Number	 0000007Bh   
+VK_F13 . . . . . . . . . . . . .	Number	 0000007Ch   
+VK_F14 . . . . . . . . . . . . .	Number	 0000007Dh   
+VK_F15 . . . . . . . . . . . . .	Number	 0000007Eh   
+VK_F16 . . . . . . . . . . . . .	Number	 0000007Fh   
+VK_F17 . . . . . . . . . . . . .	Number	 00000080h   
+VK_F18 . . . . . . . . . . . . .	Number	 00000081h   
+VK_F19 . . . . . . . . . . . . .	Number	 00000082h   
+VK_F1  . . . . . . . . . . . . .	Number	 00000070h   
+VK_F20 . . . . . . . . . . . . .	Number	 00000083h   
+VK_F21 . . . . . . . . . . . . .	Number	 00000084h   
+VK_F22 . . . . . . . . . . . . .	Number	 00000085h   
+VK_F23 . . . . . . . . . . . . .	Number	 00000086h   
+VK_F24 . . . . . . . . . . . . .	Number	 00000087h   
+VK_F2  . . . . . . . . . . . . .	Number	 00000071h   
+VK_F3  . . . . . . . . . . . . .	Number	 00000072h   
+VK_F4  . . . . . . . . . . . . .	Number	 00000073h   
+VK_F5  . . . . . . . . . . . . .	Number	 00000074h   
+VK_F6  . . . . . . . . . . . . .	Number	 00000075h   
+VK_F7  . . . . . . . . . . . . .	Number	 00000076h   
+VK_F8  . . . . . . . . . . . . .	Number	 00000077h   
+VK_F9  . . . . . . . . . . . . .	Number	 00000078h   
+VK_HELP  . . . . . . . . . . . .	Number	 0000002Fh   
+VK_HOME  . . . . . . . . . . . .	Number	 00000024h   
+VK_INSERT  . . . . . . . . . . .	Number	 0000002Dh   
+VK_LBUTTON . . . . . . . . . . .	Number	 00000001h   
+VK_LCONTROL  . . . . . . . . . .	Number	 000000A2h   
+VK_LEFT  . . . . . . . . . . . .	Number	 00000025h   
+VK_LMENU . . . . . . . . . . . .	Number	 000000A4h   
+VK_LSHIFT  . . . . . . . . . . .	Number	 000000A0h   
+VK_MENU  . . . . . . . . . . . .	Number	 00000012h   
+VK_MULTIPLY  . . . . . . . . . .	Number	 0000006Ah   
+VK_NEXT  . . . . . . . . . . . .	Number	 00000022h   
+VK_NUMLOCK . . . . . . . . . . .	Number	 00000090h   
+VK_NUMPAD0 . . . . . . . . . . .	Number	 00000060h   
+VK_NUMPAD1 . . . . . . . . . . .	Number	 00000061h   
+VK_NUMPAD2 . . . . . . . . . . .	Number	 00000062h   
+VK_NUMPAD3 . . . . . . . . . . .	Number	 00000063h   
+VK_NUMPAD4 . . . . . . . . . . .	Number	 00000064h   
+VK_NUMPAD5 . . . . . . . . . . .	Number	 00000065h   
+VK_NUMPAD6 . . . . . . . . . . .	Number	 00000066h   
+VK_NUMPAD7 . . . . . . . . . . .	Number	 00000067h   
+VK_NUMPAD8 . . . . . . . . . . .	Number	 00000068h   
+VK_NUMPAD9 . . . . . . . . . . .	Number	 00000069h   
+VK_PAUSE . . . . . . . . . . . .	Number	 00000013h   
+VK_PRINT . . . . . . . . . . . .	Number	 0000002Ah   
+VK_PRIOR . . . . . . . . . . . .	Number	 00000021h   
+VK_RBUTTON . . . . . . . . . . .	Number	 00000002h   
+VK_RCONTROL  . . . . . . . . . .	Number	 000000A3h   
+VK_RETURN  . . . . . . . . . . .	Number	 0000000Dh   
+VK_RIGHT . . . . . . . . . . . .	Number	 00000027h   
+VK_RMENU . . . . . . . . . . . .	Number	 000000A5h   
+VK_RSHIFT  . . . . . . . . . . .	Number	 000000A1h   
+VK_SCROLL  . . . . . . . . . . .	Number	 00000091h   
+VK_SEPARATER . . . . . . . . . .	Number	 0000006Ch   
+VK_SHIFT . . . . . . . . . . . .	Number	 00000010h   
+VK_SNAPSHOT  . . . . . . . . . .	Number	 0000002Ch   
+VK_SPACE . . . . . . . . . . . .	Number	 00000020h   
+VK_SUBTRACT  . . . . . . . . . .	Number	 0000006Dh   
+VK_TAB . . . . . . . . . . . . .	Number	 00000009h   
+VK_UP  . . . . . . . . . . . . .	Number	 00000026h   
+WINDOW_BUFFER_SIZE_EVENT . . . .	Number	 00000004h   
+WriteConsoleOutputCharacter  . .	Text   	 WriteConsoleOutputCharacterA
+WriteConsole . . . . . . . . . .	Text   	 WriteConsoleA
+black  . . . . . . . . . . . . .	Number	 00000000h   
+blue . . . . . . . . . . . . . .	Number	 00000001h   
+brown  . . . . . . . . . . . . .	Number	 00000006h   
+cyan . . . . . . . . . . . . . .	Number	 00000003h   
+exit . . . . . . . . . . . . . .	Text   	 INVOKE ExitProcess,0
+gray . . . . . . . . . . . . . .	Number	 00000008h   
+green  . . . . . . . . . . . . .	Number	 00000002h   
+lightBlue  . . . . . . . . . . .	Number	 00000009h   
+lightCyan  . . . . . . . . . . .	Number	 0000000Bh   
+lightGray  . . . . . . . . . . .	Number	 00000007h   
+lightGreen . . . . . . . . . . .	Number	 0000000Ah   
+lightMagenta . . . . . . . . . .	Number	 0000000Dh   
+lightRed . . . . . . . . . . . .	Number	 0000000Ch   
+magenta  . . . . . . . . . . . .	Number	 00000005h   
+red  . . . . . . . . . . . . . .	Number	 00000004h   
+white  . . . . . . . . . . . . .	Number	 0000000Fh   
+wsprintf . . . . . . . . . . . .	Text   	 wsprintfA
+yellow . . . . . . . . . . . . .	Number	 0000000Eh   
+
+	   0 Warnings
+	   0 Errors
