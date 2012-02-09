@@ -16,8 +16,8 @@ INCLUDE pdp8-operate.inc
 Accumulator			WORD	0h
 InterruptFlag		DWORD	0h
 ProgramCounter		DWORD	128d
-Link				WORD	0
-Memory				WORD	128 DUP(0), 110011111111b, 4063 DUP(0)
+Link			WORD	0
+Memory			WORD	128 DUP(0), 110011111111b, 4063 DUP(0)
 CurrentInstruction	WORD	0
 InstructionTable	DWORD	andAccumulator, twosAdd, incrementSkipZero,
 							depositClearAccumulator, jumpSubroutine, jump,
